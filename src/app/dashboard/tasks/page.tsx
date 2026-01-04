@@ -4,22 +4,37 @@ import { useState, useEffect } from 'react'
 import { Gift, ExternalLink, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+type Task = {
+  id: string
+  title: string
+  description: string
+  reward: number
+  link?: string
+  image_url?: string
+  active: boolean
+  created_at: string
+}
+
 export default function TasksPage() {
   const [showGoldenCode, setShowGoldenCode] = useState(false)
-  const [tasks, setTasks] = useState<any[]>([])
+  const [tasks, setTasks] = useState<Task[]>([])
 
   useEffect(() => {
     fetchTasks()
   }, [])
 
   const fetchTasks = async () => {
-    const { data } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('active', true)
-      .order('created_at', { ascending: false })
+    try {
+      const { data } = await supabase
+        .from<Task>('tasks')
+        .select('*')
+        .eq('active', true)
+        .order('created_at', { ascending: false })
 
-    setTasks(data || [])
+      setTasks(data || [])
+    } catch (err) {
+      console.error('Error fetching tasks:', err)
+    }
   }
 
   return (
@@ -65,50 +80,46 @@ export default function TasksPage() {
         )}
       </div>
 
-      {/* نافذة الرمز الذهبي */}
       {showGoldenCode && <GoldenCodeModal onClose={() => setShowGoldenCode(false)} />}
     </div>
   )
 }
 
-function TaskCard({ task, onComplete }: { task: any; onComplete: () => void }) {
+function TaskCard({ task, onComplete }: { task: Task; onComplete: () => void }) {
   const [loading, setLoading] = useState(false)
   const [completed, setCompleted] = useState(false)
 
   useEffect(() => {
+    const checkIfCompleted = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data } = await supabase
+        .from('user_tasks')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('task_id', task.id)
+        .single()
+
+      setCompleted(!!data)
+    }
+
     checkIfCompleted()
-  }, [])
-
-  const checkIfCompleted = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data } = await supabase
-      .from('user_tasks')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('task_id', task.id)
-      .single()
-
-    setCompleted(!!data)
-  }
+  }, [task.id])
 
   const handleComplete = async () => {
     if (completed) return
-
     setLoading(true)
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // تسجيل إكمال المهمة
       const { error } = await supabase.from('user_tasks').insert({
         user_id: user.id,
         task_id: task.id,
       })
 
-      // إضافة الربح
       const { data: userData } = await supabase
         .from('users')
         .select('balance')
@@ -118,7 +129,7 @@ function TaskCard({ task, onComplete }: { task: any; onComplete: () => void }) {
       if (userData) {
         await supabase
           .from('users')
-          .update({ balance: userData.balance + task.reward })
+          .update({ balance: (userData.balance ?? 0) + task.reward })
           .eq('id', user.id)
       }
 
@@ -203,11 +214,7 @@ function GoldenCodeModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (!code.trim()) {
-      alert('يرجى إدخال الكود')
-      return
-    }
+    if (!code.trim()) return alert('يرجى إدخال الكود')
 
     setLoading(true)
 
@@ -215,7 +222,6 @@ function GoldenCodeModal({ onClose }: { onClose: () => void }) {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // التحقق من الكود
       const { data: codeData, error: codeError } = await supabase
         .from('golden_codes')
         .select('*')
@@ -229,13 +235,11 @@ function GoldenCodeModal({ onClose }: { onClose: () => void }) {
         return
       }
 
-      // تحديث حالة الكود
       await supabase
         .from('golden_codes')
         .update({ used: true, used_by: user.id, used_at: new Date().toISOString() })
         .eq('id', codeData.id)
 
-      // إضافة الرصيد
       const { data: userData } = await supabase
         .from('users')
         .select('balance')
@@ -245,7 +249,7 @@ function GoldenCodeModal({ onClose }: { onClose: () => void }) {
       if (userData) {
         await supabase
           .from('users')
-          .update({ balance: userData.balance + codeData.amount })
+          .update({ balance: (userData.balance ?? 0) + codeData.amount })
           .eq('id', user.id)
       }
 
