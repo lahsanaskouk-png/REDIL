@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { Crown, TrendingUp, Lock, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-type VIPLevel = {
+// تعريف نوع بيانات VIP
+interface VIPLevel {
   level: string
   price: number
   dailyProfit: number
@@ -12,6 +13,12 @@ type VIPLevel = {
   days: number
 }
 
+interface UserData {
+  vip_level: string | null
+  balance: number
+}
+
+// بيانات مستويات VIP
 const vipLevels: VIPLevel[] = [
   { level: 'B1', price: 150, dailyProfit: 5, totalProfit: 200, days: 40 },
   { level: 'B2', price: 500, dailyProfit: 18, totalProfit: 720, days: 40 },
@@ -29,25 +36,31 @@ export default function VIPPage() {
   const [balance, setBalance] = useState<number>(0)
   const [showPurchase, setShowPurchase] = useState<VIPLevel | null>(null)
 
+  // جلب بيانات المستخدم
   useEffect(() => {
-    const fetchUserData = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data } = await supabase
-        .from('users')
-        .select('vip_level, balance')
-        .eq('id', user.id)
-        .single()
-
-      if (data) {
-        setCurrentVip(data.vip_level)
-        setBalance(data.balance ?? 0)
-      }
-    }
-
     fetchUserData()
   }, [])
+
+  const fetchUserData = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data, error } = await supabase
+      .from<UserData>('users')
+      .select('vip_level, balance')
+      .eq('id', user.id)
+      .single()
+
+    if (error) {
+      console.error('Error fetching user data:', error)
+      return
+    }
+
+    if (data) {
+      setCurrentVip(data.vip_level)
+      setBalance(data.balance || 0)
+    }
+  }
 
   return (
     <div className="p-6 space-y-6 animate-fadeIn">
@@ -94,19 +107,7 @@ export default function VIPPage() {
           vip={showPurchase}
           balance={balance}
           onClose={() => setShowPurchase(null)}
-          onSuccess={async () => {
-            const { data: { user } } = await supabase.auth.getUser()
-            if (!user) return
-            const { data } = await supabase
-              .from('users')
-              .select('vip_level, balance')
-              .eq('id', user.id)
-              .single()
-            if (data) {
-              setCurrentVip(data.vip_level)
-              setBalance(data.balance ?? 0)
-            }
-          }}
+          onSuccess={fetchUserData}
         />
       )}
     </div>
@@ -146,23 +147,18 @@ function VIPCard({
           </div>
           <p className="text-yellow-500 font-black text-xl">{vip.price} MAD</p>
         </div>
-
         {!canAfford && !isOwned && <Lock className="w-5 h-5 text-slate-500" />}
       </div>
 
       <div className="space-y-3 mb-6">
         <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl">
           <span className="text-slate-400 text-sm font-bold">الربح اليومي</span>
-          <span className="text-green-500 font-black text-sm">
-            +{vip.dailyProfit} MAD
-          </span>
+          <span className="text-green-500 font-black text-sm">+{vip.dailyProfit} MAD</span>
         </div>
-
         <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl">
           <span className="text-slate-400 text-sm font-bold">إجمالي الربح</span>
           <span className="text-yellow-500 font-black text-sm">{vip.totalProfit} MAD</span>
         </div>
-
         <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl">
           <span className="text-slate-400 text-sm font-bold">المدة</span>
           <span className="text-white font-black text-sm">{vip.days} يوم</span>
@@ -255,17 +251,14 @@ function PurchaseModal({
             <span className="text-slate-400 font-bold">المستوى</span>
             <span className="text-white font-black">{vip.level}</span>
           </div>
-
           <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl">
             <span className="text-slate-400 font-bold">السعر</span>
             <span className="text-yellow-500 font-black">{vip.price} MAD</span>
           </div>
-
           <div className="flex items-center justify-between p-4 bg-slate-950/50 rounded-xl">
             <span className="text-slate-400 font-bold">رصيدك الحالي</span>
             <span className="text-white font-black">{balance} MAD</span>
           </div>
-
           <div className="flex items-center justify-between p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
             <span className="text-green-400 font-bold">الرصيد بعد الشراء</span>
             <span className="text-green-500 font-black">{balance - vip.price} MAD</span>
