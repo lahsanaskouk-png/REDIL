@@ -4,7 +4,15 @@ import { useState, useEffect } from 'react'
 import { Crown, TrendingUp, Lock, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
-const vipLevels = [
+type VIPLevel = {
+  level: string
+  price: number
+  dailyProfit: number
+  totalProfit: number
+  days: number
+}
+
+const vipLevels: VIPLevel[] = [
   { level: 'B1', price: 150, dailyProfit: 5, totalProfit: 200, days: 40 },
   { level: 'B2', price: 500, dailyProfit: 18, totalProfit: 720, days: 40 },
   { level: 'B3', price: 1000, dailyProfit: 38, totalProfit: 1520, days: 40 },
@@ -18,28 +26,28 @@ const vipLevels = [
 
 export default function VIPPage() {
   const [currentVip, setCurrentVip] = useState<string | null>(null)
-  const [balance, setBalance] = useState(0)
-  const [showPurchase, setShowPurchase] = useState<any>(null)
+  const [balance, setBalance] = useState<number>(0)
+  const [showPurchase, setShowPurchase] = useState<VIPLevel | null>(null)
 
   useEffect(() => {
+    const fetchUserData = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const { data } = await supabase
+        .from('users')
+        .select('vip_level, balance')
+        .eq('id', user.id)
+        .single()
+
+      if (data) {
+        setCurrentVip(data.vip_level)
+        setBalance(data.balance ?? 0)
+      }
+    }
+
     fetchUserData()
   }, [])
-
-  const fetchUserData = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data } = await supabase
-      .from('users')
-      .select('vip_level, balance')
-      .eq('id', user.id)
-      .single()
-
-    if (data) {
-      setCurrentVip(data.vip_level)
-      setBalance(data.balance || 0)
-    }
-  }
 
   return (
     <div className="p-6 space-y-6 animate-fadeIn">
@@ -86,7 +94,19 @@ export default function VIPPage() {
           vip={showPurchase}
           balance={balance}
           onClose={() => setShowPurchase(null)}
-          onSuccess={fetchUserData}
+          onSuccess={async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+            const { data } = await supabase
+              .from('users')
+              .select('vip_level, balance')
+              .eq('id', user.id)
+              .single()
+            if (data) {
+              setCurrentVip(data.vip_level)
+              setBalance(data.balance ?? 0)
+            }
+          }}
         />
       )}
     </div>
@@ -99,7 +119,7 @@ function VIPCard({
   balance,
   onPurchase,
 }: {
-  vip: any
+  vip: VIPLevel
   currentVip: string | null
   balance: number
   onPurchase: () => void
@@ -122,16 +142,12 @@ function VIPCard({
               className={`w-6 h-6 ${isOwned ? 'text-yellow-500' : 'text-slate-500'}`}
             />
             <h3 className="text-2xl font-black text-white">{vip.level}</h3>
-            {isOwned && (
-              <CheckCircle2 className="w-5 h-5 text-yellow-500" />
-            )}
+            {isOwned && <CheckCircle2 className="w-5 h-5 text-yellow-500" />}
           </div>
           <p className="text-yellow-500 font-black text-xl">{vip.price} MAD</p>
         </div>
 
-        {!canAfford && !isOwned && (
-          <Lock className="w-5 h-5 text-slate-500" />
-        )}
+        {!canAfford && !isOwned && <Lock className="w-5 h-5 text-slate-500" />}
       </div>
 
       <div className="space-y-3 mb-6">
@@ -144,9 +160,7 @@ function VIPCard({
 
         <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl">
           <span className="text-slate-400 text-sm font-bold">إجمالي الربح</span>
-          <span className="text-yellow-500 font-black text-sm">
-            {vip.totalProfit} MAD
-          </span>
+          <span className="text-yellow-500 font-black text-sm">{vip.totalProfit} MAD</span>
         </div>
 
         <div className="flex items-center justify-between p-3 bg-slate-950/50 rounded-xl">
@@ -171,9 +185,7 @@ function VIPCard({
 
       {isOwned && (
         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4 text-center">
-          <p className="text-yellow-500 font-black text-sm">
-            ✓ مشترك حالياً
-          </p>
+          <p className="text-yellow-500 font-black text-sm">✓ مشترك حالياً</p>
         </div>
       )}
     </div>
@@ -186,7 +198,7 @@ function PurchaseModal({
   onClose,
   onSuccess,
 }: {
-  vip: any
+  vip: VIPLevel
   balance: number
   onClose: () => void
   onSuccess: () => void
@@ -205,10 +217,8 @@ function PurchaseModal({
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      // خصم السعر من الرصيد
       const newBalance = balance - vip.price
 
-      // تحديث المستوى والرصيد
       const { error } = await supabase
         .from('users')
         .update({
@@ -236,12 +246,8 @@ function PurchaseModal({
       <div className="bg-[#0a0f1e] rounded-[2rem] p-6 max-w-md w-full border border-white/10 animate-fadeIn">
         <div className="text-center mb-6">
           <Crown className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-black text-white mb-2">
-            تأكيد الشراء
-          </h2>
-          <p className="text-slate-400 text-sm">
-            أنت على وشك الاشتراك في {vip.level}
-          </p>
+          <h2 className="text-2xl font-black text-white mb-2">تأكيد الشراء</h2>
+          <p className="text-slate-400 text-sm">أنت على وشك الاشتراك في {vip.level}</p>
         </div>
 
         <div className="space-y-3 mb-6">
@@ -262,9 +268,7 @@ function PurchaseModal({
 
           <div className="flex items-center justify-between p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
             <span className="text-green-400 font-bold">الرصيد بعد الشراء</span>
-            <span className="text-green-500 font-black">
-              {balance - vip.price} MAD
-            </span>
+            <span className="text-green-500 font-black">{balance - vip.price} MAD</span>
           </div>
         </div>
 
